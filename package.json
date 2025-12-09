@@ -1,0 +1,28 @@
+{
+  "name": "trading-viewbot",
+  "version": "1.0.0",
+  "description": "Forward TradingView webhook alerts to Telegram",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "tradingview",
+    "telegram",
+    "webhook",
+    "bot",
+    "alerts"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "express-rate-limit": "^7.1.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

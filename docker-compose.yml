@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  trading-viewbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-viewbot
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      DEFAULT_CHAT_ID: ${DEFAULT_CHAT_ID}
+      SHARED_SECRET: ${SHARED_SECRET}
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-development}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    env_file:
+      - .env
+    volumes:
+      # Optional: mount for logs (if you add logging to a file)
+      # - ./logs:/app/logs
