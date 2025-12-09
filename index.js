@@ -158,6 +158,7 @@ if (!TELEGRAM_BOT_TOKEN) {
 
 // Middleware
 app.use(express.json({ limit: '10kb' }));
+app.use(express.text({ limit: '10kb', type: '*/*' })); // Accept plain text from TradingView
 
 // CORS middleware - Allow requests from any origin
 app.use((req, res, next) => {
@@ -353,109 +354,77 @@ app.get('/logs', (req, res) => {
 
 /**
  * POST /tv-webhook
- * Accepts TradingView webhook alerts and forwards them to Telegram.
+ * Accepts TradingView webhook alerts and forwards them to ALL Telegram users.
+ * No security - accepts any message!
  *
- * Expected JSON body:
- * {
- *   "secret": "...",      // optional, or use x-webhook-secret header
- *   "chat_id": "123456",  // optional, uses DEFAULT_CHAT_ID if not provided
- *   "text": "Alert text"  // required
- * }
+ * Accepts: JSON body with "text" field, OR plain text body
  */
 app.post('/tv-webhook', async (req, res) => {
   try {
     const { body, headers } = req;
-    const incomingSecret = body.secret || headers['x-webhook-secret'];
-
-    // Log the webhook attempt
+    
+    // Log raw request for debugging
     addLog('WEBHOOK', {
       message: 'Webhook received',
-      hasSecret: !!incomingSecret,
-      hasText: !!body.text,
-      textPreview: body.text?.substring(0, 100) || 'no text'
+      contentType: headers['content-type'],
+      rawBody: typeof body === 'string' ? body : JSON.stringify(body),
+      bodyType: typeof body
     });
 
-    // Validate shared secret if configured
-    if (SHARED_SECRET) {
-      if (!incomingSecret) {
-        addLog('ERROR', { message: 'Missing secret in webhook request' });
-        console.warn('🔒 Missing secret in request');
-        return res.status(401).json({
-          success: false,
-          error: 'Unauthorized: secret required',
-        });
-      }
-      if (incomingSecret !== SHARED_SECRET) {
-        addLog('ERROR', { message: 'Invalid secret provided' });
-        console.warn('🔒 Invalid secret provided');
-        return res.status(401).json({
-          success: false,
-          error: 'Unauthorized: invalid secret',
-        });
-      }
+    // Extract text - handle both JSON and plain text
+    let text;
+    if (typeof body === 'string') {
+      // Plain text body
+      text = body;
+    } else if (body && typeof body === 'object') {
+      // JSON body - try to get text field, or convert whole body to string
+      text = body.text || body.message || body.alert || JSON.stringify(body);
+    } else {
+      text = String(body);
     }
 
-    // Extract chat_id and text
-    let chatId = body.chat_id || DEFAULT_CHAT_ID;
-    let text = body.text;
-
-    if (!chatId) {
-      addLog('ERROR', { message: 'Missing chat_id and no default configured' });
-      console.warn('⚠️  Missing chat_id and no DEFAULT_CHAT_ID configured');
+    // If text is empty or just "{}", treat as no message
+    if (!text || text === '{}' || text === '""') {
+      addLog('ERROR', { message: 'Empty or invalid message received' });
       return res.status(400).json({
         success: false,
-        error: 'Missing chat_id in request and DEFAULT_CHAT_ID not configured',
+        error: 'No message content received',
       });
     }
 
-    if (!text) {
-      addLog('ERROR', { message: 'Missing text field in webhook' });
-      console.warn('⚠️  Missing text field in webhook body');
-      return res.status(400).json({
-        success: false,
-        error: 'Missing text field in request body',
-      });
+    console.log(`📨 Webhook received - Message: ${text.substring(0, 100)}`);
+
+    // Send to ALL registered users
+    const results = [];
+    for (const chat of savedChatIds) {
+      try {
+        const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            chat_id: chat.id, 
+            text: text, 
+            parse_mode: 'HTML' 
+          }),
+        });
+        const data = await response.json();
+        results.push({ chatId: chat.id, success: data.ok });
+        if (data.ok) {
+          addLog('TELEGRAM', { message: `✅ Sent to ${chat.username} (${chat.id})` });
+        }
+      } catch (e) {
+        results.push({ chatId: chat.id, success: false, error: e.message });
+        addLog('ERROR', { message: `Failed to send to ${chat.id}: ${e.message}` });
+      }
     }
 
-    // Log incoming request (without sensitive data)
-    console.log(`📨 Webhook received - Chat ID: ${chatId}, Message length: ${text.length}`);
-
-    // Send to Telegram
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    const telegramPayload = {
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'HTML',
-    };
-
-    const response = await fetch(telegramUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(telegramPayload),
-    });
-
-    const telegramResponse = await response.json();
-
-    if (!response.ok) {
-      addLog('ERROR', { message: `Telegram API error: ${telegramResponse.description}` });
-      console.error(
-        `❌ Telegram API error: ${telegramResponse.description || 'Unknown error'}`
-      );
-      return res.status(response.status).json({
-        success: false,
-        error: telegramResponse.description || 'Telegram API error',
-        telegramResponse,
-      });
-    }
-
-    addLog('TELEGRAM', { message: `✅ Sent to chat ${chatId}`, text: text.substring(0, 100) });
-    console.log(`✅ Message sent successfully to chat ${chatId}`);
+    console.log(`✅ Message sent to ${results.filter(r => r.success).length}/${savedChatIds.length} users`);
     res.status(200).json({
       success: true,
       message: 'Alert forwarded to Telegram',
-      messageId: telegramResponse.result.message_id,
+      sent: results.filter(r => r.success).length,
+      total: savedChatIds.length,
+      results
     });
   } catch (error) {
     addLog('ERROR', { message: `Webhook error: ${error.message}` });
