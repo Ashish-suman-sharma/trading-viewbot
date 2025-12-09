@@ -365,6 +365,25 @@ app.use((req, res) => {
   });
 });
 
+// Self-ping to keep the server alive on free hosting (Render, etc.)
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL; // Auto-set by Render
+const SELF_PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
+
+function keepAlive() {
+  if (RENDER_URL) {
+    fetch(`${RENDER_URL}/health`)
+      .then(res => res.json())
+      .then(data => console.log(`🏓 Self-ping successful: ${data.status}`))
+      .catch(err => console.error('🏓 Self-ping failed:', err.message));
+  }
+}
+
+// Start self-ping after server starts (only in production on Render)
+if (RENDER_URL) {
+  setInterval(keepAlive, SELF_PING_INTERVAL);
+  console.log(`🏓 Self-ping enabled: every 10 minutes to ${RENDER_URL}/health`);
+}
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 TradingView Webhook Server running on port ${PORT}`);
@@ -374,4 +393,8 @@ app.listen(PORT, () => {
   console.log(`✅ DEFAULT_CHAT_ID: ${DEFAULT_CHAT_ID || 'will auto-set when first user messages bot'}`);
   console.log(`✅ SHARED_SECRET: ${SHARED_SECRET ? 'enabled' : 'disabled'}`);
   console.log(`📋 Registered chat IDs: ${savedChatIds.length}`);
+  if (RENDER_URL) {
+    console.log(`🌐 Render URL: ${RENDER_URL}`);
+    console.log(`🏓 Keep-alive ping: enabled (every 10 minutes)`);
+  }
 });
