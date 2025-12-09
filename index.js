@@ -140,6 +140,17 @@ if (!TELEGRAM_BOT_TOKEN) {
 // Middleware
 app.use(express.json({ limit: '10kb' }));
 
+// CORS middleware - Allow requests from any origin
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-webhook-secret');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Simple rate limiter (adjust window and max as needed)
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
