@@ -353,13 +353,13 @@ app.get('/logs', (req, res) => {
 });
 
 /**
- * POST /tv-webhook
+ * Webhook handler function
  * Accepts TradingView webhook alerts and forwards them to ALL Telegram users.
  * No security - accepts any message!
  *
  * Accepts: JSON body with "text" field, OR plain text body
  */
-app.post('/tv-webhook', async (req, res) => {
+async function handleWebhook(req, res) {
   try {
     const { body, headers } = req;
     
@@ -435,7 +435,13 @@ app.post('/tv-webhook', async (req, res) => {
       details: error.message,
     });
   }
-});
+}
+
+// Handle POST to /tv-webhook
+app.post('/tv-webhook', handleWebhook);
+
+// Also handle POST to / (root) for TradingView webhooks
+app.post('/', handleWebhook);
 
 /**
  * POST /telegram-webhook
@@ -497,15 +503,11 @@ app.get('/chat-ids', (req, res) => {
 /**
  * POST /broadcast
  * Send a message to all registered chat IDs
+ * NO SECRET REQUIRED
  */
 app.post('/broadcast', async (req, res) => {
   try {
-    const { text, secret } = req.body;
-    
-    // Validate secret
-    if (SHARED_SECRET && secret !== SHARED_SECRET) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
+    const { text } = req.body;
     
     if (!text) {
       return res.status(400).json({ success: false, error: 'Missing text' });
