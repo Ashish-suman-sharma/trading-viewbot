@@ -353,6 +353,53 @@ app.get('/logs', (req, res) => {
 });
 
 /**
+ * Format TradingView alert into beautiful Telegram message
+ */
+function formatTelegramMessage(data) {
+  // If it's a string, try to parse as JSON
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch (e) {
+      // Not JSON, return as-is with timestamp
+      return `📢 <b>TradingView Alert</b>\n\n${data}\n\n⏰ ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+    }
+  }
+
+  // If it has action, ticker, etc. - format beautifully
+  if (data.action || data.ticker) {
+    const action = (data.action || 'Alert').toUpperCase();
+    const isBuy = action.includes('BUY') || action.includes('LONG');
+    const isSell = action.includes('SELL') || action.includes('SHORT');
+    
+    const emoji = isBuy ? '🟢' : isSell ? '🔴' : '📊';
+    const actionText = isBuy ? 'BUY' : isSell ? 'SELL' : action;
+    
+    let message = `${emoji} <b>${data.indicator || 'Signal'} ${actionText}</b>\n\n`;
+    
+    if (data.ticker) message += `📊 <b>Symbol:</b> ${data.ticker}\n`;
+    if (data.exchange) message += `🏛 <b>Exchange:</b> ${data.exchange}\n`;
+    if (data.price) message += `💰 <b>Price:</b> ${data.price}\n`;
+    if (data.time) message += `⏰ <b>Time:</b> ${data.time}\n`;
+    if (data.volume) message += `📈 <b>Volume:</b> ${data.volume}\n`;
+    if (data.interval) message += `🕐 <b>Timeframe:</b> ${data.interval}\n`;
+    
+    // Add IST timestamp
+    message += `\n🇮🇳 ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+    
+    return message;
+  }
+
+  // If it has text field, use that
+  if (data.text) {
+    return data.text;
+  }
+
+  // Fallback - stringify the object
+  return `📢 <b>Alert</b>\n\n<code>${JSON.stringify(data, null, 2)}</code>`;
+}
+
+/**
  * Webhook handler function
  * Accepts TradingView webhook alerts and forwards them to ALL Telegram users.
  * No security - accepts any message!
@@ -371,17 +418,8 @@ async function handleWebhook(req, res) {
       bodyType: typeof body
     });
 
-    // Extract text - handle both JSON and plain text
-    let text;
-    if (typeof body === 'string') {
-      // Plain text body
-      text = body;
-    } else if (body && typeof body === 'object') {
-      // JSON body - try to get text field, or convert whole body to string
-      text = body.text || body.message || body.alert || JSON.stringify(body);
-    } else {
-      text = String(body);
-    }
+    // Format the message
+    const text = formatTelegramMessage(body);
 
     // If text is empty or just "{}", treat as no message
     if (!text || text === '{}' || text === '""') {
